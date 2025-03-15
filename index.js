@@ -2,13 +2,17 @@
 
 import fetch from "node-fetch";
 import cheerio from 'cheerio';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const EMAIL = process.env.EMAIL
 const PASSWORD = process.env.PASSWORD
 const SCHEDULE_ID = process.env.SCHEDULE_ID
 const FACILITY_ID = process.env.FACILITY_ID
 const LOCALE = process.env.LOCALE
-const REFRESH_DELAY = Number(process.env.REFRESH_DELAY || 3)
+const REFRESH_DELAY_MIN = 15
+const REFRESH_DELAY_MAX = 60
 
 const BASE_URI = `https://ais.usvisa-info.com/${LOCALE}/niv`
 
@@ -34,11 +38,19 @@ async function main(currentBookedDate) {
         currentBookedDate = date
         const time = await checkAvailableTime(sessionHeaders, date)
 
-        book(sessionHeaders, date, time)
-          .then(d => log(`booked time at ${date} ${time}`))
+        if (!time) {
+          log(`no available time slots for date ${date}`)
+        } else {
+          book(sessionHeaders, date, time)
+            .then(d => log(`booked time at ${date} ${time}`))
+          currentBookedDate = date
+        }
       }
 
-      await sleep(REFRESH_DELAY)
+      const delay = randomIntFromInterval(REFRESH_DELAY_MIN, REFRESH_DELAY_MAX)
+      log(`waiting ${delay} seconds before next check`)
+
+      await sleep(delay)
     }
 
   } catch(err) {
@@ -184,6 +196,10 @@ function sleep(s) {
   return new Promise((resolve) => {
     setTimeout(resolve, s * 1000);
   });
+}
+
+function randomIntFromInterval(min, max) { // min and max included 
+  return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
 function log(message) {
