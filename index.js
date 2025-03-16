@@ -13,6 +13,7 @@ const FACILITY_ID = process.env.FACILITY_ID
 const LOCALE = process.env.LOCALE
 const REFRESH_DELAY_MIN = 15
 const REFRESH_DELAY_MAX = 60
+const RESCHEDULING = true
 
 const BASE_URI = `https://ais.usvisa-info.com/${LOCALE}/niv`
 
@@ -27,7 +28,7 @@ async function main(currentBookedDate) {
   try {
     const sessionHeaders = await login()
 
-    while(true) {
+    while(RESCHEDULING) {
       const date = await checkAvailableDate(sessionHeaders)
 
       if (!date) {
@@ -35,15 +36,15 @@ async function main(currentBookedDate) {
       } else if (date > currentBookedDate) {
         log(`nearest date is further than already booked (${currentBookedDate} vs ${date})`)
       } else {
-        currentBookedDate = date
         const time = await checkAvailableTime(sessionHeaders, date)
 
         if (!time) {
           log(`no available time slots for date ${date}`)
         } else {
-          book(sessionHeaders, date, time)
-            .then(d => log(`booked time at ${date} ${time}`))
+          await book(sessionHeaders, date, time)
+          log(`booked time at ${date} ${time}`)
           currentBookedDate = date
+          RESCHEDULING = false
         }
       }
 
@@ -55,8 +56,12 @@ async function main(currentBookedDate) {
 
   } catch(err) {
     console.error(err)
+    if (err.message === "Service Unavailable (503)") {
+      log("Service Unavailable, waiting 900 seconds before retry")
+      await sleep(900)
+      return main(currentBookedDate)
+    }
     log("Trying again")
-
     main(currentBookedDate)
   }
 }
@@ -72,7 +77,12 @@ async function login() {
       "Connection": "keep-alive",
     },
   })
-    .then(response => extractHeaders(response))
+    .then(response => {
+      if (response.status === 503) {
+        throw new Error("Service Unavailable (503)");
+      }
+      return extractHeaders(response);
+    })
 
   return fetch(`${BASE_URI}/users/sign_in`, {
     "headers": Object.assign({}, anonymousHeaders, {

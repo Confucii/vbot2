@@ -13,5 +13,8 @@
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.7",
     "node-fetch": "^3.3.0"
+  },
+  "devDependencies": {
+    "@flydotio/dockerfile": "^0.7.8"
   }
 }
