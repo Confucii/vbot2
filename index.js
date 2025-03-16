@@ -59,7 +59,6 @@ async function main(currentBookedDate) {
     if (err.message === "Service Unavailable (503)") {
       log("Service Unavailable, waiting 900 seconds before retry")
       await sleep(900)
-      return main(currentBookedDate)
     }
     log("Trying again")
     main(currentBookedDate)
