@@ -11,9 +11,9 @@ const PASSWORD = process.env.PASSWORD
 const SCHEDULE_ID = process.env.SCHEDULE_ID
 const FACILITY_ID = process.env.FACILITY_ID
 const LOCALE = process.env.LOCALE
-const REFRESH_DELAY_MIN = 15
-const REFRESH_DELAY_MAX = 60
-const RESCHEDULING = true
+const REFRESH_DELAY_MIN = 30
+const REFRESH_DELAY_MAX = 35
+let RESCHEDULING = true
 
 const BASE_URI = `https://ais.usvisa-info.com/${LOCALE}/niv`
 
@@ -41,7 +41,21 @@ async function main(currentBookedDate) {
         if (!time) {
           log(`no available time slots for date ${date}`)
         } else {
-          await book(sessionHeaders, date, time)
+          await book(sessionHeaders, date, time).then(response => {
+            log('Response status:', response.status);
+            log('Response status text:', response.statusText);
+            
+            // Log response headers
+            log('Response headers:');
+            for (const [key, value] of response.headers.entries()) {
+              log(`${key}: ${value}`);
+            }
+            return response;
+          })
+          .catch(error => {
+            log('Error in booking request:', error);
+          });
+
           log(`booked time at ${date} ${time}`)
           currentBookedDate = date
           RESCHEDULING = false
@@ -68,22 +82,22 @@ async function main(currentBookedDate) {
 async function login() {
   log(`Logging in`)
 
-  const anonymousHeaders = await fetch(`${BASE_URI}/users/sign_in`, {
+  const anonymousResponse = await fetch(`${BASE_URI}/users/sign_in`, {
     headers: {
       "User-Agent": "",
       "Accept": "*/*",
       "Accept-Encoding": "gzip, deflate, br",
       "Connection": "keep-alive",
     },
-  })
-    .then(response => {
-      if (response.status === 503) {
-        throw new Error("Service Unavailable (503)");
-      }
-      return extractHeaders(response);
-    })
+  });
 
-  return fetch(`${BASE_URI}/users/sign_in`, {
+  if (anonymousResponse.status === 503) {
+    throw new Error("Service Unavailable (503)");
+  }
+
+  const anonymousHeaders = await extractHeaders(anonymousResponse);
+
+  const loginResponse = await fetch(`${BASE_URI}/users/sign_in`, {
     "headers": Object.assign({}, anonymousHeaders, {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
     }),
@@ -95,12 +109,11 @@ async function login() {
       'policy_confirmed': '1',
       'commit': 'Acessar'
     }),
-  })
-    .then(res => (
-      Object.assign({}, anonymousHeaders, {
-        'Cookie': extractRelevantCookies(res)
-      })
-    ))
+  });
+
+  return Object.assign({}, anonymousHeaders, {
+    'Cookie': extractRelevantCookies(loginResponse)
+  });
 }
 
 function checkAvailableDate(headers) {
@@ -143,8 +156,8 @@ function handleErrors(response) {
 async function book(headers, date, time) {
   const url = `${BASE_URI}/schedule/${SCHEDULE_ID}/appointment`
 
-  const newHeaders = await fetch(url, { "headers": headers })
-    .then(response => extractHeaders(response))
+  const prepareResponse = await fetch(url, { "headers": headers });
+  const newHeaders = await extractHeaders(prepareResponse);
 
   return fetch(url, {
     "method": "POST",
